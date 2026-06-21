@@ -11,10 +11,17 @@ import torch
 from transformers import pipeline
 import librosa
 import requests
+from transformers import pipeline
+import scipy.io.wavfile
 
-
-
-
+# Initialize the TTS pipeline globally or within a setup function
+# Using a common, reliable model for demonstration. You might need to adjust this.
+try:
+    tts_pipeline = pipeline("text-to-speech", model="microsoft/speechtets-tts", device=0 if torch.cuda.is_available() else -1)
+    TTS_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Could not initialize TTS pipeline. Text-to-Speech feature will be disabled. Error: {e}")
+    TTS_AVAILABLE = False
 
 # --- Configuration ---
 SAMPLE_RATE = 44100  # Standard sample rate for audio recording
@@ -118,7 +125,7 @@ def call_ollama(transcript: str) -> str:
         url = "http://localhost:11434/api/generate"
         payload = {
             "model": "gemma4:latest",
-            "prompt": f"You are a helpful assistant. Here is a transcript: {transcript}",
+            "prompt": f"You are a helpful assistant. : {transcript}",
             "stream": False
         }
         response = requests.post(url, json=payload)
@@ -127,6 +134,37 @@ def call_ollama(transcript: str) -> str:
     except Exception as e:
         print(f"Error calling Ollama: {e}")
         return ""    
+
+# --- New Function ---
+def text_to_speech(text: str, output_filename: str = "output_audio.wav"):
+    """
+    Converts the given text string into an audio file using a pre-trained TTS model.
+    
+    Args:
+        text: The text to synthesize.
+        output_filename: The name of the WAV file to save the audio to.
+    """
+    if not TTS_AVAILABLE:
+        print("TTS feature is unavailable. Skipping audio generation.")
+        return None
+
+    print(f"\n🔊 Generating speech for: '{text[:50]}...'")
+    try:
+        # The pipeline handles the entire process: text -> audio tensor -> saving
+        tts_output = tts_pipeline(text)
+        
+        # The output structure might vary, but typically it returns the audio array and sampling rate
+        audio_array = tts_output["audio"]
+        sampling_rate = tts_output["sampling_rate"]
+        
+        # Save the audio array as a WAV file
+        scipy.io.wavfile.write(output_filename, rate=sampling_rate, data=audio_array.astype(float))
+        
+        print(f"✅ Successfully saved audio to {output_filename}")
+        return output_filename
+    except Exception as e:
+        print(f"❌ Error during TTS generation: {e}")
+        return None
 
 # ======================================================================
 # --- EXAMPLE USAGE ---
@@ -159,6 +197,16 @@ def main():
     print("\n🤖 Ollama Response:")
     print(response)
     print("="*50)
+
+    # 4. Generate Speech from the Response
+    if TTS_AVAILABLE:
+        audio_filename = text_to_speech(response)
+        if audio_filename:
+            os.system(f"afplay {audio_filename}")
+        else:
+            print("Audio generation failed. Skipping audio playback.")
+    else:
+        print("TTS feature is unavailable. Skipping audio generation and playback.")
     
     # 4. Cleanup (Optional)
     # os.remove(OUTPUT_FILENAME)
