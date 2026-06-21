@@ -1,0 +1,12 @@
+# Core ML/Audio Libraries
+torch
+torchaudio
+numpy
+scipy
+
+# Speech Recognition/Audio Processing
+librosa
+soundfile
+
+# General Utilities (if used for data handling or logging)
+tqdm
