@@ -124,7 +124,7 @@ def call_ollama(transcript: str) -> str:
     try:
         url = "http://localhost:11434/api/generate"
         payload = {
-            "model": "gemma4:latest",
+            "model": "llama3.2:latest",
             "prompt": f"You are a helpful assistant. : {transcript}",
             "stream": False
         }
