@@ -14,6 +14,20 @@ import requests
 from transformers import pipeline
 import scipy.io.wavfile
 from datasets import load_dataset
+import nltk # Standard text chunking helper
+
+
+# try:
+#     nltk.data.find('tokenizers/punkt')
+# except LookupError:
+#     nltk.download('punkt', quiet=True)
+# Ensure both punkt and the required punkt_tab are pre-downloaded automatically
+try:
+    nltk.data.find('tokenizers/punkt')
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+    nltk.download('punkt_tab', quiet=True)
 
 try:
     # 1. Initialize the pipeline
@@ -147,13 +161,45 @@ def call_ollama(transcript: str) -> str:
         return ""    
 
 # --- New Function ---
+# def text_to_speech(text: str, output_filename: str = "output_audio.wav"):
+#     """
+#     Converts the given text string into an audio file using a pre-trained TTS model.
+    
+#     Args:
+#         text: The text to synthesize.
+#         output_filename: The name of the WAV file to save the audio to.
+#     """
+#     if not TTS_AVAILABLE:
+#         print("TTS feature is unavailable. Skipping audio generation.")
+#         return None
+
+#     print(f"\n🔊 Generating speech for: '{text[:50]}...'")
+#     try:
+#         # FIX: Added forward_params so the speaker embedding is properly sent to SpeechT5
+#         tts_output = tts_pipeline(text, forward_params={"speaker_embeddings": DEFAULT_SPEAKER_EMBEDDING})
+        
+#         audio_array = tts_output["audio"]
+#         sampling_rate = tts_output["sampling_rate"]
+        
+#         # FIX: Scaled the raw float array safely to 16-bit PCM integers
+#         audio_data = (audio_array * 32767).astype(np.int16)
+#         scipy.io.wavfile.write(output_filename, rate=sampling_rate, data=audio_data)
+        
+#         print(f"✅ Successfully saved audio to {output_filename}")
+#         return output_filename
+#     except Exception as e:
+#         print(f"❌ Error during TTS generation: {e}")
+#         return None
+
+# ======================================================================
+# --- EXAMPLE USAGE ---
+# ======================================================================
+
+
 def text_to_speech(text: str, output_filename: str = "output_audio.wav"):
     """
     Converts the given text string into an audio file using a pre-trained TTS model.
-    
-    Args:
-        text: The text to synthesize.
-        output_filename: The name of the WAV file to save the audio to.
+    Handles long text strings by breaking them down into sentences.
     """
     if not TTS_AVAILABLE:
         print("TTS feature is unavailable. Skipping audio generation.")
@@ -161,25 +207,50 @@ def text_to_speech(text: str, output_filename: str = "output_audio.wav"):
 
     print(f"\n🔊 Generating speech for: '{text[:50]}...'")
     try:
-        # FIX: Added forward_params so the speaker embedding is properly sent to SpeechT5
-        tts_output = tts_pipeline(text, forward_params={"speaker_embeddings": DEFAULT_SPEAKER_EMBEDDING})
+        # Use nltk to cleanly split the long text response into individual sentences
+        from nltk.tokenize import sent_tokenize
+        sentences = sent_tokenize(text)
         
-        audio_array = tts_output["audio"]
-        sampling_rate = tts_output["sampling_rate"]
+        combined_audio = []
+        sampling_rate = 16000 # SpeechT5 standard output rate
+
+        for sentence in sentences:
+            # Skip empty entries
+            if not sentence.strip():
+                continue
+                
+            # Synthesize each sentence independently to avoid the 600-token limit
+            tts_output = tts_pipeline(sentence, forward_params={"speaker_embeddings": DEFAULT_SPEAKER_EMBEDDING})
+            audio_array = tts_output["audio"]
+            sampling_rate = tts_output["sampling_rate"]
+            
+            # Append this chunk's raw audio array
+            combined_audio.append(audio_array)
+            
+            # Optional: Add a brief 0.2 second pause (silence array) between sentences
+            pause_samples = int(sampling_rate * 0.2)
+            combined_audio.append(np.zeros(pause_samples))
+
+        if not combined_audio:
+            return None
+
+        # Concatenate all individual sentence audio blocks into a single piece
+        final_audio_array = np.concatenate(combined_audio)
         
-        # FIX: Scaled the raw float array safely to 16-bit PCM integers
-        audio_data = (audio_array * 32767).astype(np.int16)
+        # Scale float audio safely to 16-bit PCM integers to prevent static noise
+        audio_data = (final_audio_array * 32767).astype(np.int16)
         scipy.io.wavfile.write(output_filename, rate=sampling_rate, data=audio_data)
         
-        print(f"✅ Successfully saved audio to {output_filename}")
+        print(f"✅ Successfully saved chunked audio to {output_filename}")
         return output_filename
+        
     except Exception as e:
         print(f"❌ Error during TTS generation: {e}")
         return None
 
-# ======================================================================
-# --- EXAMPLE USAGE ---
-# ======================================================================
+
+
+
 
 # IMPORTANT: Replace 'path/to/your/audio.wav' with an actual path to an audio file.
 # For best results with Whisper, use WAV files sampled at 16kHz.
