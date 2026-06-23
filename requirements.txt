@@ -1,12 +1,12 @@
 # Core ML/Audio Libraries
 torch
-torchaudio
-numpy
+transformers
+datasets
+sounddevice
 scipy
-
-# Speech Recognition/Audio Processing
+numpy
+pydub
 librosa
-soundfile
-
-# General Utilities (if used for data handling or logging)
-tqdm
+requests
+sentencepiece
+accelerate

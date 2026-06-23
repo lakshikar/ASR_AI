@@ -13,15 +13,26 @@ import librosa
 import requests
 from transformers import pipeline
 import scipy.io.wavfile
+from datasets import load_dataset
 
-# Initialize the TTS pipeline globally or within a setup function
-# Using a common, reliable model for demonstration. You might need to adjust this.
 try:
-    tts_pipeline = pipeline("text-to-speech", model="microsoft/speechtets-tts", device=0 if torch.cuda.is_available() else -1)
+    # 1. Initialize the pipeline
+    tts_pipeline = pipeline("text-to-speech", model="microsoft/speecht5_tts", device=0 if torch.cuda.is_available() else -1)
+    
+    # FIX: Point directly to an auto-converted Parquet mirror to avoid script errors completely
+    embeddings_dataset = load_dataset("regisss/cmu-arctic-xvectors", split="validation")
+    
+    # Choose your default voice index 
+    raw_embedding = embeddings_dataset[7306]["xvector"]
+    DEFAULT_SPEAKER_EMBEDDING = torch.tensor(raw_embedding).unsqueeze(0)
+    
     TTS_AVAILABLE = True
+    print("✅ TTS Pipeline and voice profiles initialized successfully.")
 except Exception as e:
     print(f"Warning: Could not initialize TTS pipeline. Text-to-Speech feature will be disabled. Error: {e}")
     TTS_AVAILABLE = False
+
+
 
 # --- Configuration ---
 SAMPLE_RATE = 44100  # Standard sample rate for audio recording
@@ -150,15 +161,15 @@ def text_to_speech(text: str, output_filename: str = "output_audio.wav"):
 
     print(f"\n🔊 Generating speech for: '{text[:50]}...'")
     try:
-        # The pipeline handles the entire process: text -> audio tensor -> saving
-        tts_output = tts_pipeline(text)
+        # FIX: Added forward_params so the speaker embedding is properly sent to SpeechT5
+        tts_output = tts_pipeline(text, forward_params={"speaker_embeddings": DEFAULT_SPEAKER_EMBEDDING})
         
-        # The output structure might vary, but typically it returns the audio array and sampling rate
         audio_array = tts_output["audio"]
         sampling_rate = tts_output["sampling_rate"]
         
-        # Save the audio array as a WAV file
-        scipy.io.wavfile.write(output_filename, rate=sampling_rate, data=audio_array.astype(float))
+        # FIX: Scaled the raw float array safely to 16-bit PCM integers
+        audio_data = (audio_array * 32767).astype(np.int16)
+        scipy.io.wavfile.write(output_filename, rate=sampling_rate, data=audio_data)
         
         print(f"✅ Successfully saved audio to {output_filename}")
         return output_filename
@@ -202,12 +213,13 @@ def main():
     if TTS_AVAILABLE:
         audio_filename = text_to_speech(response)
         if audio_filename:
-            os.system(f"afplay {audio_filename}")
+            # FIX: Changed 'afplay' (macOS) to 'paplay' (Ubuntu Linux)
+            os.system(f"paplay {audio_filename}")
         else:
             print("Audio generation failed. Skipping audio playback.")
     else:
         print("TTS feature is unavailable. Skipping audio generation and playback.")
-    
+
     # 4. Cleanup (Optional)
     # os.remove(OUTPUT_FILENAME)
     # print(f"\n🧹 Cleaned up temporary file: {OUTPUT_FILENAME}")
